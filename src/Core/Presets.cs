@@ -13,14 +13,23 @@ public sealed class EncodeSettings
     public string Container { get; set; } = "mp4";
     public bool TargetSize { get; set; }
     public double TargetMB { get; set; } = 25;
+    /// <summary>How much extra analysis NVENC encoders do on top of <see cref="Speed"/> (ignored by other encoders).</summary>
+    public GpuProfile GpuProfile { get; set; } = GpuProfile.Quality;
 
     public EncodeSettings Clone() => (EncodeSettings)MemberwiseClone();
 
     public bool SameAs(EncodeSettings o) =>
         Encoder == o.Encoder && Quality == o.Quality && Speed == o.Speed && MaxShortSide == o.MaxShortSide
         && FpsCap == o.FpsCap && Audio == o.Audio && AudioKbps == o.AudioKbps && Container == o.Container
+        && GpuProfile == o.GpuProfile
         && TargetSize == o.TargetSize && (!TargetSize || Math.Abs(TargetMB - o.TargetMB) < 0.01);
 }
+
+/// <summary>
+/// NVENC rate-control effort. Quality = two-pass full-resolution analysis with a 32-frame lookahead (the original
+/// GPU Turbo behaviour); Balanced = single pass with a short 8-frame lookahead; Fast = single pass, no lookahead, no AQ.
+/// </summary>
+public enum GpuProfile { Quality, Balanced, Fast }
 
 /// <summary>Edits applied on top of the compression (also shared by the queue; trim is per file).</summary>
 public sealed class EditSettings
@@ -40,6 +49,8 @@ public sealed class Preset
     public required string Tagline { get; init; }
     public required string Savings { get; init; }
     public required Func<EncodeSettings> Build { get; init; }
+    /// <summary>True when <see cref="Build"/> depends on the detected GPU encoders, so it must be rebuilt after detection.</summary>
+    public bool HardwareDependent { get; init; }
 }
 
 /// <summary>
@@ -66,6 +77,24 @@ public static class Presets
         return new EncodeSettings { Encoder = hw.Id, Quality = q, Speed = 0, Audio = "opus", AudioKbps = audioKbps };
     }
 
+    /// <summary>
+    /// Lighter GPU presets: same quality target as <see cref="Gpu"/>, less encoder analysis. The speed is given per
+    /// vendor by name (NVENC p-levels, QuickSync presets, AMF quality modes); the NVENC analysis depth comes from
+    /// <see cref="GpuProfile"/>. No GPU encoder: a faster SVT-AV1 preset.
+    /// </summary>
+    private static EncodeSettings GpuLight(GpuProfile profile, string nvenc, string qsv, string amf, string svt, int audioKbps)
+    {
+        var hw = Encoders.BestGpu;
+        if (hw == null) return Svt(33, svt, audioKbps);
+        var name = hw.Id.EndsWith("_nvenc") ? nvenc : hw.Id.EndsWith("_qsv") ? qsv : amf;
+        var q = hw.Family switch { Family.AV1 => 36, Family.HEVC => 28, _ => 27 };
+        return new EncodeSettings
+        {
+            Encoder = hw.Id, Quality = q, Speed = Math.Max(0, Array.IndexOf(hw.Speeds, name)),
+            Audio = "opus", AudioKbps = audioKbps, GpuProfile = profile,
+        };
+    }
+
     public static readonly List<Preset> All =
     [
         new() { Id = "balanced", Emoji = "⚖️", Name = "Balanced", Savings = "−70–85 %",
@@ -79,7 +108,13 @@ public static class Presets
                 Build = () => Svt(24, "5", 160) },
         new() { Id = "turbo", Emoji = "⚡", Name = "GPU Turbo", Savings = "−60–80 %",
                 Tagline = "Uses your graphics card. Many times faster.",
-                Build = () => Gpu(96) },
+                Build = () => Gpu(96), HardwareDependent = true },
+        new() { Id = "gpu-balanced", Emoji = "🏎️", Name = "GPU Balanced", Savings = "−60–80 %",
+                Tagline = "About 2× faster than Turbo, nearly the same look.",
+                Build = () => GpuLight(GpuProfile.Balanced, "p4", "medium", "balanced", "8", 96), HardwareDependent = true },
+        new() { Id = "gpu-fast", Emoji = "🚀", Name = "GPU Fast", Savings = "−60–80 %",
+                Tagline = "Quickest GPU settings, for long clips.",
+                Build = () => GpuLight(GpuProfile.Fast, "p2", "veryfast", "speed", "12", 96), HardwareDependent = true },
         new() { Id = "compact", Emoji = "📱", Name = "Compact 720p", Savings = "−90–97 %",
                 Tagline = "Screen recordings, lectures and phone clips.",
                 Build = () => Svt(34, "6", 64, maxShort: 720, fps: 30) },
@@ -96,7 +131,7 @@ public static class Presets
                         Encoder = hw?.Id ?? "x264", Speed = hw != null ? 0 : 2, Quality = 30,
                         Audio = "opus", AudioKbps = 64, TargetSize = true, TargetMB = 10,
                     };
-                } },
+                }, HardwareDependent = true },
         new() { Id = "trim", Emoji = "✂️", Name = "Trim only", Savings = "lossless",
                 Tagline = "Cut without re-encoding. Instant, no quality loss.",
                 Build = () => new EncodeSettings { Encoder = "copy", Audio = "copy" } },

@@ -69,6 +69,7 @@ public static class SelfTest
             }
         }
 
+        failures += GpuPresetChecks(info, Log);
         failures += await SyncTestsAsync(dir, Log);
 
         try
@@ -88,6 +89,34 @@ public static class SelfTest
 
         Log(failures == 0 ? "ALL PASSED" : $"{failures} FAILURE(S)");
         return failures == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// The three GPU presets must stay distinct: Turbo keeps its two-pass full-resolution analysis and 32-frame lookahead,
+    /// Balanced and Fast drop the second pass, and Fast also drops the lookahead and adaptive quantisation.
+    /// </summary>
+    private static int GpuPresetChecks(MediaInfo info, Action<string> log)
+    {
+        int failures = 0;
+        var ids = new[] { "turbo", "gpu-balanced", "gpu-fast" };
+        var cmds = new Dictionary<string, string>();
+        foreach (var id in ids)
+        {
+            var s = Presets.Get(id)!.Build();
+            var req = new EncodeRequest(info, 0, null, s, new EditSettings(), Path.Combine(Ff.TempRoot, "selftest", "x.mp4"));
+            cmds[id] = " " + string.Join(" ", Pipeline.Build(req)[0]) + " ";
+        }
+
+        bool Has(string id, string flag) => cmds[id].Contains(" " + flag + " ");
+        var nv = Presets.Get("turbo")!.Build().Encoder.EndsWith("_nvenc");
+        var ok = cmds.Values.Distinct().Count() == ids.Length                 // every preset resolves to its own command
+                 && (!nv || (Has("turbo", "-multipass fullres") && Has("turbo", "-rc-lookahead 32")
+                             && Has("gpu-balanced", "-rc-lookahead 8") && !cmds["gpu-balanced"].Contains("-multipass")
+                             && !cmds["gpu-fast"].Contains("-multipass") && !cmds["gpu-fast"].Contains("-rc-lookahead")
+                             && !cmds["gpu-fast"].Contains("-spatial-aq")));
+        if (!ok) failures++;
+        log($"{(ok ? "PASS" : "FAIL")} gpu presets {string.Join(" | ", ids.Select(i => $"{i}={Presets.Get(i)!.Build().Encoder}/{Presets.Get(i)!.Build().Speed}"))}");
+        return failures;
     }
 
     /// <summary>

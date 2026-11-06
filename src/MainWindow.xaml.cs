@@ -161,8 +161,8 @@ public sealed partial class MainWindow : Window
                 gpu != null ? "SystemFillColorSuccessBrush" : "SystemFillColorCautionBrush", out _);
         if (Encoders.IsAvailable("svtav1")) AddChip("AV1 ready", "AccentFillColorDefaultBrush", out _);
 
-        // Presets that depend on hardware (GPU Turbo, Fit to size) are rebuilt now that we know what's available.
-        if (!Encoders.IsAvailable(_enc.Encoder) || _presetId is "turbo" or "target")
+        // Presets that depend on hardware (the GPU presets, Fit to size) are rebuilt now that we know what's available.
+        if (!Encoders.IsAvailable(_enc.Encoder) || Presets.Get(_presetId)?.HardwareDependent == true)
         {
             var keepMb = _enc.TargetMB;
             _enc = (Presets.Get(_presetId) ?? Presets.All[0]).Build();

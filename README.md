@@ -12,8 +12,9 @@ Requires the .NET 10 SDK (`winget install Microsoft.DotNet.SDK.10`) and ffmpeg (
 - Queue: drag and drop files or folders, per-file trim, thumbnails, live progress/ETA, taskbar progress
 - Preview: hardware playback, filmstrip timeline with draggable trim handles, loop inside the trim.
   Files Windows can't decode get an automatic low-res preview copy.
-- Storage presets: Balanced / Archive / Pristine (SVT-AV1 10-bit + Opus), GPU Turbo (NVENC/QSV/AMF),
+- Storage presets: Balanced / Archive / Pristine (SVT-AV1 10-bit + Opus), GPU Turbo / GPU Balanced / GPU Fast (NVENC/QSV/AMF),
   Compact 720p, Universal (H.264), Fit to size (exact MB, re-encodes if it overshoots), Trim only (lossless)
+  (the preset selected on first start is **Balanced**, the CPU SVT-AV1 one)
 - Size estimate: encodes three 4-second samples and extrapolates. "View sample" plays the compressed clip.
 - Edits: speed 0.25–4×, volume 0–300 %, remove audio
 - Audio sync (per video): slider ±1.5 s with live preview (the sound plays shifted while you drag), ‹ › 10 ms nudges,
@@ -25,6 +26,23 @@ Requires the .NET 10 SDK (`winget install Microsoft.DotNet.SDK.10`) and ffmpeg (
 - Results that end up bigger than the original are discarded (optional)
 
 Keys: `Space` play/pause · `I` / `O` set start/end · `R` reset trim · `← →` ±5 s · `, .` frame step · `Ctrl+O` add
+
+## GPU presets
+All three use the best GPU encoder that passed its test encode (AV1 before HEVC before H.264; NVENC, then QuickSync, then AMF)
+with the same quality target; they differ in how much work the encoder spends per frame. With no GPU encoder they fall back to
+SVT-AV1 presets 10 / 8 / 12.
+
+| Preset | NVENC settings | QuickSync / AMF | Time | Speed | Size | VMAF | PSNR (Y) |
+|---|---|---|---|---|---|---|---|
+| GPU Turbo | p7, two-pass full-res, 32-frame lookahead, AQ | veryslow / quality | 13.9 s | 2.2× | 48.7 MB | 94.82 | 41.27 dB |
+| GPU Balanced | p4, single pass, 8-frame lookahead, AQ | medium / balanced | 7.5 s | 4.0× | 50.1 MB | 94.73 | 41.23 dB |
+| GPU Fast | p2, single pass, no lookahead, no AQ | veryfast / speed | 6.6 s | 4.5× | 45.3 MB | 94.37 | 40.47 dB |
+
+Measured on a desktop NVIDIA GPU (AV1 NVENC, CQ 36, 10-bit, Opus audio) with a 30 s 2560×1440 60 fps HEVC game capture
+(92.6 MB, constant frame rate fix on). Times are the median of three runs; output sizes were identical in every run.
+Quality is ffmpeg `libvmaf` (default model, every second frame) and PSNR against a lossless constant-frame-rate copy of the
+source. The QuickSync and AMF settings follow the same pattern but were not measured (no such hardware on the test machine).
+Faster settings than p2 did not help: p1 took the same ~6 s and scored lower (VMAF 93.97), and p3 was within 0.1 VMAF of p2.
 
 ## Layout
 - `src/Core/` has no UI code: ffmpeg probing (`Ff.cs`), encoder catalog + GPU detection (`Encoders.cs`), A/V offset detection (`AudioSync.cs`),

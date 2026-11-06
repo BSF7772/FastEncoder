@@ -149,8 +149,9 @@ public static class Pipeline
                 default:
                     if (enc.Id.EndsWith("_nvenc"))
                     {
-                        a.AddRange(["-preset", speed, "-tune", "hq", "-multipass", "fullres", "-rc-lookahead", "32",
-                                    "-spatial-aq", "1", "-temporal-aq", "1", "-pix_fmt", tenBit ? "p010le" : "yuv420p", "-rc", "vbr"]);
+                        a.AddRange(["-preset", speed, "-tune", "hq"]);
+                        a.AddRange(NvencAnalysis(s.GpuProfile));
+                        a.AddRange(["-pix_fmt", tenBit ? "p010le" : "yuv420p", "-rc", "vbr"]);
                         a.AddRange(s.TargetSize
                             ? ["-b:v", vb, "-maxrate", $"{(int)(videoKbps * 1.2)}k", "-bufsize", $"{(int)(videoKbps * 1.5)}k"]
                             : ["-cq", q, "-b:v", "0"]);
@@ -197,6 +198,14 @@ public static class Pipeline
         a.Add(r.Output);
         return a;
     }
+
+    /// <summary>NVENC multipass / lookahead / adaptive-quantisation flags. Quality is the long-standing GPU Turbo set.</summary>
+    internal static string[] NvencAnalysis(GpuProfile p) => p switch
+    {
+        GpuProfile.Balanced => ["-rc-lookahead", "8", "-spatial-aq", "1", "-temporal-aq", "1"],
+        GpuProfile.Fast => [],
+        _ => ["-multipass", "fullres", "-rc-lookahead", "32", "-spatial-aq", "1", "-temporal-aq", "1"],
+    };
 
     private static int Even(double v) => Math.Max(2, (int)Math.Round(v / 2) * 2);
 
