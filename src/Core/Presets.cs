@@ -110,7 +110,7 @@ public static class Presets
                 Tagline = "Uses your graphics card. Many times faster.",
                 Build = () => Gpu(96), HardwareDependent = true },
         new() { Id = "gpu-balanced", Emoji = "🏎️", Name = "GPU Balanced", Savings = "−60–80 %",
-                Tagline = "About 2× faster than Turbo, nearly the same look.",
+                Tagline = "Faster than Turbo, nearly the same look.",
                 Build = () => GpuLight(GpuProfile.Balanced, "p4", "medium", "balanced", "8", 96), HardwareDependent = true },
         new() { Id = "gpu-fast", Emoji = "🚀", Name = "GPU Fast", Savings = "−60–80 %",
                 Tagline = "Quickest GPU settings, for long clips.",
